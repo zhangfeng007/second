@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>boom</title>
+    <style type="text/css">
+        *{padding: 0;margin: 0;}
+        body,html{height:100%;}
+        body{background-color: #000;overflow: hidden;}
+        #canvas{display:block;cursor:pointer;}
+    </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="text/javascript"> 
+    window.requestAnimFrame=(function(){
+        return window.requestAnimationFrame || window.mozRequestAnimationFrame|| function(callback){
+            window.setTimeout(callback,1000/60);
+        }
+    })();
+    var can = document.getElementById("canvas"),
+        ctx = can.getContext("2d"),
+        cw = window.innerWidth,
+        ch = window.innerHeight,
+        fireworks = [],//烟花线条整合
+        particles = [],//烟花粒子集合
+        hue = 120,//初始色调
+        limiterTotal =5,//点击产生烟花的事件间隔
+        limiterTick = 0,//点击的初始时间
+        timerTotal = 80,//自动产生烟花的时间间隔
+        timerTick = 0,
+        mousedown = false,
+        mx,my;
+        can.width=cw;
+        can.height=ch;
+        //勾股定理计算烟花线条移动的距离
+    function calculateDistance(x1,y1,x2,y2){
+        var xDistance =x1 -x2,
+            yDistance =y1 -y2;
+        return Math.sqrt(Math.pow(xDistance,2)+Math.pow(yDistance,2));
+    }
+    //生成一个随机数
+    function random(min,max){
+        return Math.random()*(max-min)+min;
+    }
+    //烟花线条
+    function Firework(sx,sy,tx,ty){
+        this.x=sx;//新的坐标位置赋值给开始坐标
+        this.y=sy;
+        this.sx=sx;//开始坐标
+        this.sy=sy;
+        this.tx=tx;//目标位置
+        this.ty=ty;
+        this.distanceTotarget =calculateDistance(sx,sy,tx,ty);//总的距离
+        this.distanceTraveled =0;//当前所移动的距离
+        this.coordinates =[];//坐标点集合
+        this.coordinateCount =3;//坐标点个数
+        while(this.coordinateCount--){//添加坐标点到数组
+            this.coordinates.push([this.x,this.y]);
+        }
+        this.angle = Math.atan2(ty-sy,tx-sx);//计算烟花移动和x轴的角度
+        this.speed =2;//开始速度
+        this.acceleration=1.05;//加速度
+        this.brightness=random(50,70);//烟花颜色的亮度
+        this.targetRadius =1;//到达目标位置产生一个半径为1的圆
+    }
+    //添加烟花线条的功能
+    Firework.prototype.update=function(i){//更新坐标
+        this.coordinates.pop();//移除最后一个坐标点
+        this.coordinates.unshift([this.x,this.y]);//把最新的坐标点添加到数组最前面
+        this.speed*=this.acceleration;//有加速度的速度值
+        var vx=Math.cos(this.angle)*this.speed;//x方向的速度
+        var vy=Math.sin(this.angle)*this.speed;//y方向的速度
+        this.distanceTraveled=calculateDistance(this.sx,this.sy,this.x+vx,this.y+vy);//当烟花线条到达终点的时候就消失
+        if(this.distanceTraveled>=this.distanceTotarget){
+            //添加烟花粒子
+            createParticles(this.tx,this.ty);
+            fireworks.splice(i, 1);
+        }else{
+            this.x+=vx;
+            this.y+=vy;
+        }
+        //目标位置提示圆形的半径
+        if(this.targetRadius<8){
+            this.targetRadius+=0.3;
+        }else{
+            this.targetRadius=1;
+        }
+    }
+    //绘制出烟花线条
+    Firework.prototype.draw =function(){
+        //绘制出烟花线条
+        ctx.beginPath();
+        //从数组里面的最后一个坐标绘制到最新的坐标
+        ctx.moveTo(this.coordinates[this.coordinates.length-1][0], this.coordinates[this.coordinates.length-1][1]);
+        ctx.lineTo(this.x, this.y);
+        ctx.closePath();
+        ctx.strokeStyle="hsl("+hue+",100%,"+this.brightness+"%)";
+        ctx.stroke();
+        //绘制目标点的提示圆
+        ctx.beginPath();
+        ctx.arc(this.tx, this.ty, this.targetRadius, 0, 360, false);
+        ctx.stroke();
+    }
+
+
+    /*var yanhua=new Firework(cw/2,ch,150,50);
+      yanhua.update(3);
+      yanhua.draw();*/
+    //烟花粒子
+    function Particles(x,y){
+        this.x=x;
+        this.y=y;
+        this.coordinates=[];//烟花粒子集合
+        this.coordinateCount=5;
+        //把最新的坐标点添加坐标集合
+        while(this.coordinateCount--){
+            this.coordinates.push([this.x,this.y]);
+        }
+        this.angle = random(0,Math.PI*2);//0~360度
+        this.speed =random(0,10);
+        this.friction=0.95;//速度衰减指数
+        this.gravity=1;//重力加速度
+        this.hue=random(hue-20,hue+20);//随机生成一个色调
+        this.brightness=random(50,80);//颜色的亮度
+        this.alpha=1;//透明度
+        this.decay =random(0.015,0.03);//透明度衰减指数
+    }
+    //更新烟花粒子属性
+    Particles.prototype.update=function(n){
+        this.coordinates.pop();//移除最后一个坐标点
+        this.coordinates.unshift([this.x,this.y]);
+        this.speed*=this.friction;//更新速度
+        this.x+=Math.cos(this.angle)*this.speed;
+        this.y+=Math.sin(this.angle)*this.speed;
+        this.alpha-=this.decay;//透明度更新
+        if(this.alpha<=this.decay){
+            //让烟花粒子消失
+            particles.splice(n,1);
+        }
+    }
+    //绘制出烟花粒子
+    Particles.prototype.draw =function(){
+        ctx.beginPath();
+        ctx.moveTo(this.coordinates[this.coordinates.length-1][0], this.coordinates[this.coordinates.length-1][1]);
+        ctx.lineTo(this.x, this.y);
+        ctx.strokeStyle="hsl("+this.hue+",100%,"+this.brightness+"%,"+this.alpha+")";
+        ctx.stroke();
+    }
+    //更新烟花粒子
+    function createParticles(x,y){
+        var particlesCount=parseInt(Math.random()*100)+10;
+        while(particlesCount--){
+            particles.push(new Particles(x,y));
+        }
+    }
+    //整个动画
+    function loop(){
+        requestAnimFrame(loop);//每16.7ms请求加载一次
+        hue +=0.5;
+        ctx.globalCompositeOperation ="destination-out";//源图像透明
+        ctx.fillStyle="rgba(0,0,0,1)";
+        ctx.fillRect(0,0,cw,ch);
+        ctx.globalCompositeOperation ="lighter";//源图像透明
+        var i =fireworks.length;
+        //console.log(i)
+        //绘制集体的每个烟花对象
+        while(i--){
+            fireworks[i].draw();
+            fireworks[i].update(i);
+        }
+        //绘制具体的每个烟花粒子对象
+        var n=particles.length;
+        while(n--){
+            particles[n].draw();
+            particles[n].update(n);
+        }
+        if(limiterTick>=limiterTotal){
+            if(mousedown){//添加新的烟花对象到烟花线条数组集合中
+                fireworks.push(new Firework(cw/2,ch,mx,my));
+                limiterTick=0;
+            }
+        }else{
+            limiterTick++;
+        }
+        //自动产生烟花
+        if(timerTick>=timerTotal){
+            if(!mousedown){
+                fireworks.push(new Firework(cw/2,ch,random(0,cw),random(0,ch/2)));
+                timerTick=0;
+            }
+        }else{
+            timerTick++;
+        }
+    }
+    can.addEventListener("mousemove",function(e){
+        e.preventDefault();
+        mx=e.pageX -can.offsetLeft;
+        my=e.pageY -can.offsetTop;
+    },false);
+    can.addEventListener("mousedown",function(e){
+        e.preventDefault();
+        mousedown = true;
+    },false);
+    can.addEventListener("mouseup",function(e){
+        e.preventDefault();
+        mousedown = false;
+    },false);
+    window.onload=loop;
+
+
+
+</script>
+</body>
+</html>
